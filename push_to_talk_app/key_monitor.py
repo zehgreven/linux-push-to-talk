@@ -20,10 +20,13 @@
 # CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 # TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-import os.path
+import sys
+import os
 import logging
 
-from Xlib import display, X
+sys.path.insert(1, os.path.join(sys.path[0], '..'))
+
+from Xlib import X, XK, display
 from Xlib.ext import record
 from Xlib.protocol import rq
 
@@ -114,7 +117,7 @@ class KeyMonitor(object):
                     'ext_requests': (0, 0, 0, 0),
                     'ext_replies': (0, 0, 0, 0),
                     'delivered_events': (0, 0),
-                    'device_events': (X.KeyPress, X.KeyRelease, ),
+                    'device_events': (X.KeyPress, X.MotionNotify),
                     'errors': (0, 0),
                     'client_started': False,
                     'client_died': False,
@@ -138,6 +141,13 @@ class KeyMonitor(object):
                 self.keypressevent(event, KeyMonitor.PRESS)
             elif event.type == X.KeyRelease:
                 self.keypressevent(event, KeyMonitor.RELEASE)
+            elif event.type == X.ButtonPress:
+                self.mousepressevent(event, KeyMonitor.PRESS)
+            elif event.type == X.ButtonRelease:
+                self.mousepressevent(event, KeyMonitor.RELEASE)
+            elif event.type == X.MotionNotify:
+                # mouse is moving
+                return
 
     def keypressevent(self, event, action):
         keysym = self.local_dpy.keycode_to_keysym(event.detail, 0)
@@ -147,6 +157,22 @@ class KeyMonitor(object):
             data_type = data_object[0]
             self.logger.debug("Got data %s" % str(data_object))
             if data_type == "SET":
+                self.set_configured_keycode(keysym)
+            self.handler(keysym, action)
+        else:
+            self.handler(keysym, action)
+
+    def mousepressevent(self, event, action):
+        keysym = self.local_dpy.keycode_to_keysym(event.detail, 0)
+        if not self.return_pipe.empty():
+            self.logger.debug("Key info %s" % keysym)
+            data_object = self.return_pipe.get_nowait()
+            data_type = data_object[0]
+            self.logger.debug("Got data %s" % str(data_object))
+            if data_type == "SET":
+                # Avoiding LEFT and RIGHT buttons
+                if event.detail in [X.Button1, X.Button3]:
+                    return
                 self.set_configured_keycode(keysym)
             self.handler(keysym, action)
         else:
